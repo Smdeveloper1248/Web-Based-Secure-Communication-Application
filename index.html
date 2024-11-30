@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One-to-One Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    #chatBox {
+      display: flex;
+      flex-direction: column;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+      padding: 10px;
+    }
+    #users {
+      margin-bottom: 10px;
+    }
+    #messageInput {
+      display: flex;
+    }
+    #messageInput input {
+      flex-grow: 1;
+      padding: 5px;
+    }
+    #messageInput button {
+      padding: 5px 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>One-to-One Chat</h1>
+
+  <div id="login">
+    <input id="usernameInput" type="text" placeholder="Enter your username">
+    <button onclick="register()">Join Chat</button>
+  </div>
+
+  <div id="chat" style="display:none;">
+    <div id="users">
+      <h3>Online Users:</h3>
+      <ul id="userList"></ul>
+    </div>
+
+    <div id="chatBox"></div>
+
+    <div id="messageInput">
+      <input id="message" type="text" placeholder="Type a message">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let username = '';
+    let currentRecipient = '';
+
+    function register() {
+      username = document.getElementById('usernameInput').value;
+      if (username) {
+        socket.emit('register', username);
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('chat').style.display = 'block';
+      }
+    }
+
+    // Update the online users list
+    socket.on('userList', (users) => {
+      const userList = document.getElementById('userList');
+      userList.innerHTML = '';
+      users.forEach((user) => {
+        if (user !== username) {
+          const li = document.createElement('li');
+          li.textContent = user;
+          li.onclick = () => setRecipient(user);
+          userList.appendChild(li);
+        }
+      });
+    });
+
+    // Set the recipient for private messaging
+    function setRecipient(recipient) {
+      currentRecipient = recipient;
+      document.getElementById('chatBox').innerHTML += `<div><strong>Now chatting with ${recipient}</strong></div>`;
+    }
+
+    // Send a private message
+    function sendMessage() {
+      const message = document.getElementById('message').value;
+      console.log(message)
+      if (message && currentRecipient) {
+        socket.emit('privateMessage', {
+          to: currentRecipient,
+          message,
+          from: username,
+        });
+        document.getElementById('chatBox').innerHTML += `<div>You: ${message}</div>`;
+        document.getElementById('message').value = '';
+      }
+    }
+
+    // Receive a private message
+    socket.on('privateMessage', ({ message, from }) => {
+      document.getElementById('chatBox').innerHTML += `<div>${from}: ${message}</div>`;
+    });
+  </script>
+</body>
+</html>
