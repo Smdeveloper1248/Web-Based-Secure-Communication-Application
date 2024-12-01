@@ -9,6 +9,8 @@ const server = createServer(app);
 const io = new Server(server);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Serve static files (like script/main.js)
+app.use(express.static(join(__dirname)));
 
 // Serve the index.html file
 app.get('/', (req, res) => {
