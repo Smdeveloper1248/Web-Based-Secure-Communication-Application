@@ -20,13 +20,18 @@ async function generateKeys() {
 
 // Utility function to convert a base64 string to an ArrayBuffer
 function base64ToArrayBuffer(base64) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  } catch (error) {
+    console.error('Failed to decode base64 string:', error);
+    throw new Error('Invalid base64 string provided');
   }
-  return bytes.buffer;
 }
 
 // Derive shared secret
@@ -100,7 +105,7 @@ async function register() {
   }
 }
 
-// Update the online users list
+// Update the online users list and cache their public keys
 socket.on('userList', (users) => {
   const userList = document.getElementById('userList');
   userList.innerHTML = '';
@@ -110,9 +115,12 @@ socket.on('userList', (users) => {
       li.textContent = user.username;
       li.onclick = () => setRecipient(user.username, user.publicKey);
       userList.appendChild(li);
+      // Cache the user's public key
+      userKeys.set(user.username, user.publicKey);
     }
   });
 });
+
 
 // Set the recipient for private messaging
 function setRecipient(recipient, recipientPublicKey) {
@@ -144,10 +152,20 @@ async function sendMessage() {
 
 // Receive a private message
 socket.on('privateMessage', async ({ message, from }) => {
-  const sharedSecret = await deriveSharedSecret(userKeys.get(from));
-  const decryptedMessage = await decryptMessage(sharedSecret, message);
+  try {
+    const senderPublicKey = userKeys.get(from);
+    if (!senderPublicKey) {
+      console.warn(`Public key for sender "${from}" not found. Message cannot be decrypted.`);
+      return;
+    }
 
-  document.getElementById('chatBox').innerHTML += `<div>${from}: ${decryptedMessage}</div>`;
+    const sharedSecret = await deriveSharedSecret(senderPublicKey);
+    const decryptedMessage = await decryptMessage(sharedSecret, message);
+
+    document.getElementById('chatBox').innerHTML += `<div>${from}: ${decryptedMessage}</div>`;
+  } catch (error) {
+    console.error('Error receiving or decrypting the private message:', error);
+  }
 });
 
 // Attach functions to the window object

@@ -9,6 +9,7 @@ const server = createServer(app);
 const io = new Server(server);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
 // Serve static files (like script/main.js)
 app.use(express.static(join(__dirname)));
 
@@ -25,6 +26,9 @@ io.on('connection', (socket) => {
 
   // Handle user registration
   socket.on('register', ({ username, publicKey }) => {
+    if (users.has(username)) {
+      console.warn(`Username ${username} is already registered. Updating socket and publicKey.`);
+    }
     users.set(username, { socketId: socket.id, publicKey });
     console.log(`${username} registered with socket ID ${socket.id}`);
     io.emit(
@@ -36,10 +40,12 @@ io.on('connection', (socket) => {
   // Handle private messages
   socket.on('privateMessage', ({ to, message, from }) => {
     const recipient = users.get(to);
-    console.log('This is private / encrypted messagse :', message)
-    if (recipient) {
-      io.to(recipient.socketId).emit('privateMessage', { message, from });
+    if (!recipient) {
+      console.warn(`Recipient ${to} not found.`);
+      return;
     }
+    console.log('Private / Encrypted Message:', message);
+    io.to(recipient.socketId).emit('privateMessage', { message, from });
   });
 
   // Handle user disconnection
@@ -56,6 +62,8 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log('Server running at http://localhost:3000');
+// Port configuration
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
 });
