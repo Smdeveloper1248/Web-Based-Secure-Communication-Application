@@ -17,34 +17,41 @@ app.get('/', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
 });
 
-// Store connected users
-const users = {};
+// Store connected users and their public keys
+const users = new Map(); // Map of username -> { socketId, publicKey }
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Handle user registration
-  socket.on('register', (username) => {
-    users[username] = socket.id;
+  socket.on('register', ({ username, publicKey }) => {
+    users.set(username, { socketId: socket.id, publicKey });
     console.log(`${username} registered with socket ID ${socket.id}`);
-    io.emit('userList', Object.keys(users)); // Send updated user list
+    io.emit(
+      'userList',
+      Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
+    ); // Send updated user list with public keys
   });
 
   // Handle private messages
   socket.on('privateMessage', ({ to, message, from }) => {
-    const recipientSocketId = users[to];
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('privateMessage', { message, from });
+    const recipient = users.get(to);
+    console.log('This is private / encrypted messagse :', message)
+    if (recipient) {
+      io.to(recipient.socketId).emit('privateMessage', { message, from });
     }
   });
 
   // Handle user disconnection
   socket.on('disconnect', () => {
-    const username = Object.keys(users).find((key) => users[key] === socket.id);
+    const username = Array.from(users.entries()).find(([_, { socketId }]) => socketId === socket.id)?.[0];
     if (username) {
-      delete users[username];
+      users.delete(username);
       console.log(`${username} disconnected.`);
-      io.emit('userList', Object.keys(users)); // Send updated user list
+      io.emit(
+        'userList',
+        Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
+      ); // Send updated user list
     }
   });
 });
