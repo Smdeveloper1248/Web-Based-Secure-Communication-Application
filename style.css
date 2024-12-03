@@ -1,25 +1,68 @@
 body {
     font-family: Arial, sans-serif;
+    background-color: #333;
+    padding: 20px;
+    color : #fff;
+
   }
+  #login{
+    margin: 20px 10px;
+  }
+  #usernameInput{
+    padding: 5px;
+  }
+
+  #login button{
+    padding: 5px;
+  }
+
+
+  h1{
+    color: #03A9F4;
+    font: 2rem D-DIN-Bold,Arial,Verdana,sans-serif;
+    font-weight: bold;
+  }
+  h3{
+    color: #fff;
+    font: 1.2rem D-DIN-Bold,Arial,Verdana,sans-serif;
+    margin : 20px 10px;
+  }
+
   #chatBox {
     display: flex;
     flex-direction: column;
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid #ccc;
-    margin-bottom: 10px;
+    margin-bottom: 20px;
+    margin-top: 20px;
+    padding: 10px;
+  }
+
+  #chatBox div{
     padding: 10px;
   }
   #users {
-    margin-bottom: 10px;
+    margin-bottom: 20px;
   }
+
+  #userList li{
+    padding: 7px 0px;
+  }
+
   #messageInput {
     display: flex;
   }
   #messageInput input {
     flex-grow: 1;
-    padding: 5px;
+    padding: 7px;
   }
   #messageInput button {
     padding: 5px 10px;
   }
+
+  li:hover{
+    cursor: pointer;
+  }
+
+  

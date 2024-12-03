@@ -96,14 +96,25 @@ function arrayBufferToBase64(buffer) {
 // Register user
 async function register() {
   username = document.getElementById('usernameInput').value;
-  if (username) {
-    await generateKeys();
-    const publicKeyBase64 = arrayBufferToBase64(publicKey); // Encode public key
-    socket.emit('register', { username, publicKey: publicKeyBase64 }); // Send username and public key
-    document.getElementById('login').style.display = 'none';
-    document.getElementById('chat').style.display = 'block';
+  if (!username.trim()) {
+    alert('Please enter a username.');
+    return;
   }
+
+  await generateKeys();
+  const publicKeyBase64 = arrayBufferToBase64(publicKey); // Encode public key
+
+  // Emit registration request and wait for confirmation
+  socket.emit('register', { username, publicKey: publicKeyBase64 }, (response) => {
+    if (response.success) {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('chat').style.display = 'block';
+    } else {
+      alert(response.message); // Show error message
+    }
+  });
 }
+
 
 // Update the online users list and cache their public keys
 socket.on('userList', (users) => {

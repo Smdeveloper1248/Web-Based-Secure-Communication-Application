@@ -25,17 +25,26 @@ io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Handle user registration
-  socket.on('register', ({ username, publicKey }) => {
-    if (users.has(username)) {
-      console.warn(`Username ${username} is already registered. Updating socket and publicKey.`);
-    }
-    users.set(username, { socketId: socket.id, publicKey });
-    console.log(`${username} registered with socket ID ${socket.id}`);
-    io.emit(
-      'userList',
-      Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
-    ); // Send updated user list with public keys
-  });
+socket.on('register', ({ username, publicKey }, callback) => {
+  if (users.has(username)) {
+    console.log(`Username ${username} is already taken.`);
+    callback({ success: false, message: 'Username is already taken. Please choose another.' });
+    return;
+  }
+
+  // If username is available, register the user
+  users.set(username, { socketId: socket.id, publicKey });
+  console.log(`${username} registered with socket ID ${socket.id}`);
+  
+  // Send updated user list to all clients
+  io.emit(
+    'userList',
+    Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
+  );
+
+  callback({ success: true }); // Notify client of successful registration
+});
+
 
   // Handle private messages
   socket.on('privateMessage', ({ to, message, from }) => {
