@@ -101,19 +101,112 @@ async function register() {
     return;
   }
 
+  // Check if RSA key pair exists in local storage for the username
+  const storedKeys = localStorage.getItem(`rsaKeys-${username}`);
+  let rsaPrivateKey, rsaPublicKey;
+
+  if (storedKeys) {
+    // Load the existing RSA key pair
+    const { privateKey, publicKey } = JSON.parse(storedKeys);
+    rsaPrivateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      base64ToArrayBuffer(privateKey),
+      { name: 'RSA-PSS', hash: 'SHA-256' },
+      true,
+      ['sign']
+    );
+    rsaPublicKey = await crypto.subtle.importKey(
+      'spki',
+      base64ToArrayBuffer(publicKey),
+      { name: 'RSA-PSS', hash: 'SHA-256' },
+      true,
+      ['verify']
+    );
+  } else {
+    // Generate a new RSA key pair if not found
+    const rsaKeyPair = await crypto.subtle.generateKey(
+      {
+        name: 'RSA-PSS',
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+        hash: 'SHA-256',
+      },
+      true,
+      ['sign', 'verify']
+    );
+
+    rsaPrivateKey = rsaKeyPair.privateKey;
+    rsaPublicKey = rsaKeyPair.publicKey;
+
+    // Store the RSA keys in local storage
+    const exportedPrivateKey = arrayBufferToBase64(await exportPrivateKey(rsaPrivateKey));
+    const exportedPublicKey = arrayBufferToBase64(await exportPublicKey(rsaPublicKey));
+    localStorage.setItem(
+      `rsaKeys-${username}`,
+      JSON.stringify({ privateKey: exportedPrivateKey, publicKey: exportedPublicKey })
+    );
+  }
+
+  console.log(rsaPublicKey)
+  const rsaPublicKeyBase64 = arrayBufferToBase64(await exportPublicKey(rsaPublicKey))
+  console.log(rsaPublicKeyBase64)
+
+  // Generate ECDH key pair
   await generateKeys();
-  const publicKeyBase64 = arrayBufferToBase64(publicKey); // Encode public key
+  const ecdhPublicKeyBase64 = arrayBufferToBase64(publicKey);
+
+
+  // Sign the ECDH public key using the RSA private key
+  const signedEcdhPublicKey = await crypto.subtle.sign(
+    { name: 'RSA-PSS', saltLength: 32 },
+    rsaPrivateKey,
+    new TextEncoder().encode(ecdhPublicKeyBase64)
+  );
+
+  const signedEcdhPublicKeyBase64 = arrayBufferToBase64(signedEcdhPublicKey);
 
   // Emit registration request and wait for confirmation
-  socket.emit('register', { username, publicKey: publicKeyBase64 }, (response) => {
-    if (response.success) {
-      document.getElementById('login').style.display = 'none';
-      document.getElementById('chat').style.display = 'block';
-    } else {
-      alert(response.message); // Show error message
+  socket.emit(
+    'register',
+    { username, publicKey: ecdhPublicKeyBase64, signature: signedEcdhPublicKeyBase64 },
+    (response) => {
+      if (response.success) {
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('chat').style.display = 'block';
+        showPublicKey(rsaPublicKeyBase64);
+      } else {
+        alert(response.message); // Show error message
+      }
     }
-  });
+  );
 }
+
+function showPublicKey(rsaPublicKey) {
+  const keyDisplayContainer = document.getElementById('keyDisplay');
+  const publicKeyTextarea = document.getElementById('publicKeyDisplay');
+  console.log(rsaPublicKey)
+  publicKeyTextarea.value = rsaPublicKey; // Set the public key in the textarea
+  keyDisplayContainer.style.display = 'block'; // Make the container visible
+}
+
+// Function to copy the public key to clipboard
+function copyPublicKey() {
+  const publicKeyTextarea = document.getElementById('publicKeyDisplay');
+  publicKeyTextarea.select(); // Select the text in the textarea
+  document.execCommand('copy'); // Copy the selected text to the clipboard
+
+  alert('Public key copied to clipboard!');
+}
+
+// Utility functions
+async function exportPrivateKey(key) {
+  return await crypto.subtle.exportKey('pkcs8', key);
+}
+
+async function exportPublicKey(key) {
+  return await crypto.subtle.exportKey('spki', key);
+}
+
 
 
 // Update the online users list and cache their public keys
@@ -124,7 +217,7 @@ socket.on('userList', (users) => {
     if (user.username !== username) {
       const li = document.createElement('li');
       li.textContent = user.username;
-      li.onclick = () => setRecipient(user.username, user.publicKey);
+      li.onclick = () => selectRecipient(user.username);
       userList.appendChild(li);
       // Cache the user's public key
       userKeys.set(user.username, user.publicKey);
@@ -140,13 +233,85 @@ function setRecipient(recipient, recipientPublicKey) {
   document.getElementById('chatBox').innerHTML += `<div><strong>Now chatting with ${recipient}</strong></div>`;
 }
 
+// Function to handle recipient selection
+async function selectRecipient(recipientUsername) {
+  // Show a prompt for the recipient's public key (out-of-band shared key)
+  const recipientPublicKeyBase64 = prompt(
+    `Enter the out-of-band public key for ${recipientUsername}:`
+  );
+
+  if (!recipientPublicKeyBase64) {
+    alert('Public key is required to proceed.');
+    return;
+  }
+
+  // Send the recipient's username to the server to get their signature and public key
+  socket.emit('getRecipientSignature', { username: recipientUsername }, async (response) => {
+    if (!response.success) {
+      alert('Failed to fetch recipient data. Please try again.');
+      return;
+    }
+
+    const { rsaSignature, ecdhPublicKeyBase64 } = response;
+
+    // console.log('rsa singature:',rsaSignature)
+    // console.log('ecdhPublicKeyBase64', ecdhPublicKeyBase64)
+    // console.log('recipientPublicKeyBase64',recipientPublicKeyBase64)
+
+    try {
+      // Verify the out-of-band public key using the signature and the server-provided public key
+      const isValid = await verifySignedEcdhPublicKey(
+        recipientPublicKeyBase64, // User-provided out-of-band public key
+        rsaSignature, // Server-provided RSA signature
+        ecdhPublicKeyBase64, // Server-provided RSA public key
+
+      );
+
+      if (isValid) {
+        alert('Public key verified successfully! Proceeding with the chat...');
+        // Continue the chat procedure
+        setRecipient(recipientUsername, ecdhPublicKeyBase64);
+      } else {
+        alert('Signature verification failed. Public key does not match.');
+      }
+    } catch (err) {
+      console.error('Verification error:', err);
+      alert('An error occurred during verification.');
+    }
+  });
+}
+
+// Function to verify the public key with the server's signature
+async function verifySignedEcdhPublicKey(rsaPublicKey, rsaSignature, ecdhPublicKeyBase64) {
+  const importedPublicKey = await crypto.subtle.importKey(
+    'spki',
+    base64ToArrayBuffer(rsaPublicKey),
+    {
+      name: 'RSA-PSS',
+      hash: { name: 'SHA-256' },
+    },
+    true,
+    ['verify']
+  );
+
+  return await crypto.subtle.verify(
+    {
+      name: 'RSA-PSS',
+      saltLength: 32,
+    },
+    importedPublicKey,
+    base64ToArrayBuffer(rsaSignature),
+    new TextEncoder().encode(ecdhPublicKeyBase64)
+  );
+}
+
 // Send a private message
 async function sendMessage() {
   const message = document.getElementById('message').value;
   if (message && currentRecipient) {
     const recipientPublicKey = userKeys.get(currentRecipient);
     const sharedSecret = await deriveSharedSecret(recipientPublicKey);
-
+    console.log('recipient Public key ', recipientPublicKey)
     const { encrypted, iv } = await encryptMessage(sharedSecret, message);
     socket.emit('privateMessage', {
       to: currentRecipient,

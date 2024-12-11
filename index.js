@@ -25,25 +25,41 @@ io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Handle user registration
-socket.on('register', ({ username, publicKey }, callback) => {
-  if (users.has(username)) {
-    console.log(`Username ${username} is already taken.`);
-    callback({ success: false, message: 'Username is already taken. Please choose another.' });
-    return;
-  }
-
-  // If username is available, register the user
-  users.set(username, { socketId: socket.id, publicKey });
-  console.log(`${username} registered with socket ID ${socket.id}`);
+  socket.on('register', ({ username, publicKey, signature }, callback) => {
+    if (users.has(username)) {
+      console.log(`Username ${username} is already taken.`);
+      callback({ success: false, message: 'Username is already taken. Please choose another.' });
+      return;
+    }
   
-  // Send updated user list to all clients
-  io.emit(
-    'userList',
-    Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
-  );
-
-  callback({ success: true }); // Notify client of successful registration
-});
+    // If username is available, register the user
+    users.set(username, { socketId: socket.id, publicKey, signature });
+    console.log(`${username} registered with socket ID ${socket.id}`);
+    
+    // Send updated user list to all clients
+    io.emit(
+      'userList',
+      Array.from(users.entries()).map(([username, { publicKey }]) => ({ username, publicKey }))
+    );
+  
+    callback({ success: true }); // Notify client of successful registration
+  });
+  
+  socket.on('getRecipientSignature', ({ username }, callback) => {
+    const user = users.get(username);
+    if (!user) {
+      callback({ success: false, message: 'Recipient not found.' });
+      return;
+    }
+  
+    // Send the recipient's public key and signature
+    callback({
+      success: true,
+      ecdhPublicKeyBase64: user.publicKey, // Public key of the recipient
+      rsaSignature: user.signature, // Signature of the recipient
+    });
+  });
+  
 
 
   // Handle private messages
